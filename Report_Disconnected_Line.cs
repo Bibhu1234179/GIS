@@ -1,27 +1,37 @@
 using ArcGIS.Core.Data;
 using ArcGIS.Core.Geometry;
+using ArcGIS.Desktop.Framework.Threading.Tasks;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
-namespace Build_Connectivity.Tools.QC_Tools
+namespace QC_Tools.Tools
 {
     class Report_Disconnected_Line
     {
-        public static void Process(System.Windows.Controls.Label lblpro)
+        public static DateTime startTime;
+        public static DateTime endTime;
+        public static double UNTolerance;
+        public static async Task Process(System.Windows.Controls.Label lblpro)
         {
-            string uniqueid = MainWindow.uniquefield;
+            startTime = DateTime.Now;
+            string uniqueid = Dockpane1View.uniquefield;
             DateTime currentTime = DateTime.Now;
             string timestamp = currentTime.ToString("yyyy-MM-dd_HH-mm-ss");
             string rptName = $"{"Report_Disconnected_Line"}_{timestamp}.csv";
-            StreamWriter stw = new StreamWriter(System.IO.Path.Combine(MainWindow.reportpath, rptName));
-            stw.WriteLine("FeatureClass_Line, AssetGroup_Line, AssetType_Line, GlobalID_Line, UniqueID_Line, Remarks");
-            report_disconnected_line(lblpro,stw, uniqueid);
+            StreamWriter stw = new StreamWriter(System.IO.Path.Combine(Dockpane1View.reportpath, rptName));
+
+
+            await QueuedTask.Run(() =>
+            {
+                stw.WriteLine("FeatureClass_Line, AssetGroup_Line, AssetType_Line, GlobalID_Line, UniqueID_Line, Remarks");
+                report_disconnected_line(lblpro, stw, uniqueid);
+            });
+            endTime = DateTime.Now;
+            cls_required_methods.writelogtimetocsv("log_reportdisconnedtedlines", "Report Disconnected Line", endTime, startTime);
         }
         public static Dictionary<int, string> Get_subtype_code_val(FeatureClass Fc_reqfeatureclass)
         {
@@ -97,14 +107,14 @@ namespace Build_Connectivity.Tools.QC_Tools
             bool flag = false;
             //TransFt = null;
             SpatialQueryFilter sf = new SpatialQueryFilter();
-            sf.FilterGeometry = GeometryEngine.Instance.Buffer(pt_featshape, MainWindow.UNTolerance); // 5 ft is aaproximately 1.524 meter
+            sf.FilterGeometry = GeometryEngine.Instance.Buffer(pt_featshape, UNTolerance); // 5 ft is aaproximately 1.524 meter
             sf.SpatialRelationship = SpatialRelationship.Intersects;
             //sf.WhereClause = $"assetgroup IN({str_transformer_ag})";
             var fcur = fcl_devclass.Search(sf, false);
             while (fcur.MoveNext())
             {
                 Feature ft_device = fcur.Current as Feature;
-                if (GeometryEngine.Instance.Distance(ft_device.GetShape(), pt_featshape) <= MainWindow.UNTolerance)
+                if (GeometryEngine.Instance.Distance(ft_device.GetShape(), pt_featshape) <=UNTolerance)
                 {
                     MapPoint mpoint = ft_device.GetShape() as MapPoint;
                     if (mpoint.Z.ToString("0.00") == pt_featshape.Z.ToString("0.00"))
@@ -122,14 +132,14 @@ namespace Build_Connectivity.Tools.QC_Tools
             bool flag = false;
             //TransFt = null;
             SpatialQueryFilter sf = new SpatialQueryFilter();
-            sf.FilterGeometry = GeometryEngine.Instance.Buffer(pt_featshape, MainWindow.UNTolerance); // 5 ft is aaproximately 1.524 meter
+            sf.FilterGeometry = GeometryEngine.Instance.Buffer(pt_featshape, UNTolerance); // 5 ft is aaproximately 1.524 meter
             sf.SpatialRelationship = SpatialRelationship.Intersects;
             //sf.WhereClause = $"assetgroup IN({str_transformer_ag})";
             var fcur = fcl_junclass.Search(sf, false);
             while (fcur.MoveNext())
             {
                 Feature ft_device = fcur.Current as Feature;
-                if (GeometryEngine.Instance.Distance(ft_device.GetShape(), pt_featshape) <= MainWindow.UNTolerance)
+                if (GeometryEngine.Instance.Distance(ft_device.GetShape(), pt_featshape) <=UNTolerance)
                 {
                     MapPoint mpoint = ft_device.GetShape() as MapPoint;
                     if (mpoint.Z.ToString("0.00") == pt_featshape.Z.ToString("0.00"))
@@ -142,43 +152,45 @@ namespace Build_Connectivity.Tools.QC_Tools
             }
             return flag;
         }
-        public static bool Is_Snapped_With_Line(MapPoint pt_featshape, long oid)
+        public static bool Is_Snapped_With_Line(ReadOnlyPointCollection points, long oid, FeatureClass fcl)
         {
-            //Polyline plx = linefeature.GetShape() as Polyline;
-            //ReadOnlyPointCollection ptcollx = plx.Points;
-            bool is_flag_connect = false;
-            FeatureClass fcl = ClassRequiredDetails.Lineclass;
-            bool flag = false;
-            SpatialQueryFilter sf = new SpatialQueryFilter();
-            sf.SubFields = "objectid,shape,assetgroup,assettype,globalid";
-            sf.FilterGeometry = GeometryEngine.Instance.Buffer(pt_featshape, MainWindow.UNTolerance);
-            sf.SpatialRelationship = SpatialRelationship.Intersects;
-            sf.WhereClause = $"objectid NOT IN({oid})";
-            var fcur = fcl.Search(sf, true);
-
-            while (fcur.MoveNext())
+            
+            foreach (MapPoint pt_featshape in points )
             {
-                Feature ft_cr_feat = fcur.Current as Feature;
-                //int assettype_2 = Convert.ToInt32(ft_cr_feat["assettype"]);
-                //int assetgroup_2 = Convert.ToInt32(ft_cr_feat["assetgroup"]);
-                //string line_asstypdesc = ClassRequiredDetails.GetAssetTypeDescription(ClassRequiredDetails.Lineclass, assetgroup_2, assettype_2, out string line_assgrpdesc);
-                Polyline pl = ft_cr_feat.GetShape() as Polyline;
-                for (int i = 0; i < pl.PointCount; i++)
-                {
-                    if (GeometryEngine.Instance.Distance(pt_featshape, pl.Points[i]) <= MainWindow.UNTolerance)
-                    {
-                        if ((pt_featshape.Z.ToString("0.00") == pl.Points[i].Z.ToString("0.00")))
-                        {
-                            is_flag_connect = true;
-                            return is_flag_connect;
-                        }
+               
+                bool flag = false;
+                SpatialQueryFilter sf = new SpatialQueryFilter();
+                sf.SubFields = "objectid,shape,assetgroup,assettype,globalid";
+                sf.FilterGeometry = GeometryEngine.Instance.Buffer(pt_featshape, UNTolerance);
+                sf.SpatialRelationship = SpatialRelationship.Intersects;
+                sf.WhereClause = $"objectid NOT IN({oid})";
+                var fcur = fcl.Search(sf, true);
 
+                while (fcur.MoveNext())
+                {
+                    Feature ft_cr_feat = fcur.Current as Feature;
+                    //int assettype_2 = Convert.ToInt32(ft_cr_feat["assettype"]);
+                    //int assetgroup_2 = Convert.ToInt32(ft_cr_feat["assetgroup"]);
+                    //string line_asstypdesc = ClassRequiredDetails.GetAssetTypeDescription(ClassRequiredDetails.Lineclass, assetgroup_2, assettype_2, out string line_assgrpdesc);
+                    Polyline pl = ft_cr_feat.GetShape() as Polyline;
+                    for (int i = 0; i < pl.PointCount; i++)
+                    {
+                        if (GeometryEngine.Instance.Distance(pt_featshape, pl.Points[i]) <= UNTolerance)
+                        {
+                            if ((pt_featshape.Z.ToString("0.00") == pl.Points[i].Z.ToString("0.00")))
+                            {
+                                return true;
+                            }
+
+                        }
                     }
                 }
-
+                
             }
+            return false;
 
-            return is_flag_connect;
+
+           
         }
         public static Domain GetDomainFromField(FeatureClass fcldev, string fieldname, string subtypedesc)
         {
@@ -211,7 +223,7 @@ namespace Build_Connectivity.Tools.QC_Tools
             string str_astdesc = GetDomainDesc(dom_ast1, Convert.ToInt32(str_ast_code));
             string globalid1 = ftline["Globalid"].ToString();
             string uniqueid1 = null;
-            if(FieldExists(Fc_Lineclass,str_UniqueidField))
+            if (FieldExists(Fc_Lineclass, str_UniqueidField))
             {
                 uniqueid1 = ftline[str_UniqueidField] == null || ftline[str_UniqueidField] == DBNull.Value ? "null" : ftline[str_UniqueidField].ToString();
             }
@@ -228,105 +240,118 @@ namespace Build_Connectivity.Tools.QC_Tools
         {
             List<string> disconnectedLinesReport = new List<string>();
             int num_crcount = 0;
-            try
+            using (Geodatabase sourcegdb = new Geodatabase(new FileGeodatabaseConnectionPath(new Uri(Dockpane1View.gdbpath))))
             {
-                Geodatabase sourcegdb = ClassRequiredDetails.Geodatabase;
-                Table domnettab = sourcegdb.OpenDataset<Table>("A_DomainNetwork");
-                string domainstring = GetDomainNetwork(domnettab);
-
-                FeatureClass linefc = sourcegdb.OpenDataset<FeatureClass>(domainstring + "Line");
-                FeatureClass devfc = sourcegdb.OpenDataset<FeatureClass>(domainstring + "Device");
-                FeatureClass junfc = sourcegdb.OpenDataset<FeatureClass>(domainstring + "Junction");
-
-                Dictionary<int, string> dic_subtype_line = Get_subtype_code_val(linefc);
-                long cntx_max = linefc.GetCount();
-                
-
-                var fcurline = linefc.Search(null, false);
-
-                while (fcurline.MoveNext())
+                try
                 {
-                    Feature ft_line = fcurline.Current as Feature;
-                    num_crcount++;
+
+                    Table domnettab = sourcegdb.OpenDataset<Table>("A_DomainNetwork");
+                    string domainstring = GetDomainNetwork(domnettab);
+
+                    FeatureClass linefc = sourcegdb.OpenDataset<FeatureClass>(domainstring + "Line");
+                    FeatureClass devfc = sourcegdb.OpenDataset<FeatureClass>(domainstring + "Device");
+                    FeatureClass junfc = sourcegdb.OpenDataset<FeatureClass>(domainstring + "Junction");
+                    if (!(FieldExists(linefc, uniqueid)))
+                    {
+                        ArcGIS.Desktop.Framework.Dialogs.MessageBox.Show("Provided unique id field is not valid");
+                        return;
+                    }
+                    double xytolerance = devfc.GetDefinition().GetSpatialReference().XYTolerance;
+                    UNTolerance = xytolerance * 2 * Math.Sqrt(2);
+
+                    Dictionary<int, string> dic_subtype_line = Get_subtype_code_val(linefc);
+                    long cntx_max = linefc.GetCount();
+
+
+                    var fcurline = linefc.Search(null, false);
+
+                    while (fcurline.MoveNext())
+                    {
+                        Feature ft_line = fcurline.Current as Feature;
+                        num_crcount++;
+
+                        Polyline plx = ft_line.GetShape() as Polyline;
+                        ReadOnlyPointCollection ptcollx = plx.Points;
+
+                        MapPoint startPt = ptcollx[0];
+                        MapPoint endPt = ptcollx[ptcollx.Count - 1];
+
+                        bool fromDisconnected;
+                        bool toDisconnected;
+                        bool eachpointDisconnected;
+
+                        lblpro.Dispatcher.Invoke(() => lblpro.Content = $"Processing Line: {num_crcount} / {cntx_max}");
+                       
+
+                        if (Is_Snapped_With_Device(devfc, startPt))
+                        {
+                            continue;
+                        }
+                        else if (Is_Snapped_With_Junction(junfc, startPt))
+                        {
+                            continue;
+                        }                      
+                        else
+                        {
+                            fromDisconnected = true;
+                        }
+
+                        if (Is_Snapped_With_Device(devfc, endPt))
+                        {
+                            continue;
+                        }
+                        else if (Is_Snapped_With_Junction(junfc, endPt))
+                        {
+                            continue;
+                        }                       
+                        else
+                        {
+                            toDisconnected = true;
+                        }
+
+                        if(Is_Snapped_With_Line(ptcollx, ft_line.GetObjectID(), linefc))
+                        {
+                            eachpointDisconnected = true;
+                        }
+                        else
+                        {
+                            eachpointDisconnected = false;
+                        }
+
+
+                        if (fromDisconnected && toDisconnected && eachpointDisconnected)
+                        {
+                            List<string> lst_line_details = get_feature_details(linefc, ft_line, dic_subtype_line, uniqueid);
+
+                            disconnectedLinesReport.Add(
+                                $"{linefc.GetName()},{lst_line_details[0]},{lst_line_details[1]},{lst_line_details[2]},{lst_line_details[3]},line is not snapped to any feature"
+                            );
+                        }
+                        //lblpro.Dispatcher.Invoke(() => lblpro.Content = $"Processing Line: {num_crcount} / {cntx_max}");
                     
-                    Polyline plx = ft_line.GetShape() as Polyline;
-                    ReadOnlyPointCollection ptcollx = plx.Points;
-
-                    MapPoint startPt = ptcollx[0];
-                    MapPoint endPt = ptcollx[ptcollx.Count - 1];
-
-                    bool fromDisconnected;
-                    bool toDisconnected;
-
-                    lblpro.Content = $"Processing Line: {num_crcount} / {cntx_max}";
-                    System.Windows.Forms.Application.DoEvents();
-
-                    if (Is_Snapped_With_Device(devfc, startPt))
-                    {
-                        continue;
-                    }
-                    else if(Is_Snapped_With_Junction(junfc, startPt))
-                    {
-                        continue;
-                    }
-                    else if(Is_Snapped_With_Line(startPt, ft_line.GetObjectID()))
-                    {
-                        continue;
-                    }
-                    else
-                    {
-                        fromDisconnected = true;
                     }
 
-                    if (Is_Snapped_With_Device(devfc, endPt))
-                    {
-                        continue;
-                    }
-                    else if (Is_Snapped_With_Junction(junfc, endPt))
-                    {
-                        continue;
-                    }
-                    else if (Is_Snapped_With_Line(endPt, ft_line.GetObjectID()))
-                    {
-                        continue;
-                    }
-                    else
-                    {
-                        toDisconnected = true;
-                    }
-                    
-
-                    if (fromDisconnected && toDisconnected)
-                    {
-                        List<string> lst_line_details = get_feature_details(linefc, ft_line, dic_subtype_line, uniqueid);
-
-                        disconnectedLinesReport.Add(
-                            $"{linefc.GetName()},{lst_line_details[0]},{lst_line_details[1]},{lst_line_details[2]},{lst_line_details[3]},line is not snapped to any feature"
-                        );
-                    }
-                    lblpro.Content = $"Processing Line: {num_crcount} / {cntx_max}";
-                    System.Windows.Forms.Application.DoEvents();
                 }
-                
-            }
-            catch (Exception ex)
-            {
-                sw.WriteLine("Error occurred: " + ex.Message);
-                sw.WriteLine("Stack Trace: " + ex.StackTrace);
-            }
-            finally
-            {
-                // Write all collected results to the StreamWriter
-                MessageBox.Show(num_crcount.ToString());
-                foreach (var line in disconnectedLinesReport)
+                catch (Exception ex)
                 {
-                    sw.WriteLine(line);
+                    System.Windows.MessageBox.Show("Error occurred: " + ex.Message);
+                }
+                finally
+                {
+                    // Write all collected results to the StreamWriter
+                    foreach (var line in disconnectedLinesReport)
+                    {
+                        sw.WriteLine(line);
+                    } // Ensure all data is written
+                    sw.Close();
+                    sw.Dispose();
                 }
 
-                sw.Flush(); // Ensure all data is written
             }
+                
 
 
         }
+
     }
 }
